@@ -1,5 +1,6 @@
 import random
-from datetime import datetime
+import requests
+import time
 
 class CryptoAdvisor:
     def __init__(self, name="CryptoSage"):
@@ -10,8 +11,8 @@ class CryptoAdvisor:
             f"Hi! Ready to explore green crypto options with {name}? 🚀"
         ]
         
-        # Sample dataset as provided in the assignment
-        self.crypto_db = {
+        # Static database as fallback
+        self.static_crypto_db = {
             "Bitcoin": {
                 "price_trend": "rising",
                 "market_cap": "high",
@@ -29,11 +30,7 @@ class CryptoAdvisor:
                 "market_cap": "medium",
                 "energy_use": "low",
                 "sustainability_score": 8/10
-            }
-        }
-        
-        # Add more cryptocurrencies for a better experience
-        self.crypto_db.update({
+            },
             "Solana": {
                 "price_trend": "rising",
                 "market_cap": "medium",
@@ -52,29 +49,110 @@ class CryptoAdvisor:
                 "energy_use": "very low",
                 "sustainability_score": 9/10
             }
-        })
+        }
         
+        # Data not avaliable on the API, so we keep it static
+        self.sustainability_data = {
+            "bitcoin": {"energy_use": "high", "sustainability_score": 3/10},
+            "ethereum": {"energy_use": "medium", "sustainability_score": 6/10},
+            "cardano": {"energy_use": "low", "sustainability_score": 8/10},
+            "solana": {"energy_use": "low", "sustainability_score": 7.5/10},
+            "polkadot": {"energy_use": "low", "sustainability_score": 7/10},
+            "algorand": {"energy_use": "very low", "sustainability_score": 9/10}
+        }
+        
+        # Initialize API data
+        self.crypto_db = {}
+        self.update_crypto_data()
+        
+    def update_crypto_data(self):
+        """Update crypto data from CoinGecko API"""
+        try:
+            # Get top coins by market cap
+            url = "https://api.coingecko.com/api/v3/coins/markets"
+            params = {
+                "vs_currency": "usd",
+                "order": "market_cap_desc",
+                "per_page": 10,
+                "page": 1,
+                "sparkline": False
+            }
+            
+            response = requests.get(url, params=params)
+            
+            if response.status_code == 200:
+                coins = response.json()
+                
+                for coin in coins:
+                    coin_id = coin["id"]
+                    price_change_24h = coin["price_change_percentage_24h"] or 0
+                    
+                    if price_change_24h > 1.5:
+                        price_trend = "rising"
+                    elif price_change_24h < -1.5:
+                        price_trend = "falling"
+                    else:
+                        price_trend = "stable"
+                    
+                    market_cap = coin["market_cap"]
+                    if market_cap > 50000000000:
+                        market_cap_category = "high"
+                    elif market_cap > 10000000000:
+                        market_cap_category = "medium"
+                    else:
+                        market_cap_category = "low"
+                    
+                    # merge with sustainability data
+                    self.crypto_db[coin["name"]] = {
+                        "price_trend": price_trend,
+                        "market_cap": market_cap_category,
+                        "current_price": coin["current_price"],
+                        "price_change_24h": coin["price_change_percentage_24h"],
+                        "market_cap_value": coin["market_cap"],
+                        "energy_use": self.sustainability_data.get(coin_id, {}).get("energy_use", "unknown"),
+                        "sustainability_score": self.sustainability_data.get(coin_id, {}).get("sustainability_score", 5/10)
+                    }
+                
+                print(f"Successfully updated data for {len(self.crypto_db)} cryptocurrencies from CoinGecko API")
+                return True
+                
+            else:
+                print(f"API request failed with status code {response.status_code}")
+                self.crypto_db = self.static_crypto_db.copy()
+                return False
+                
+        except Exception as e:
+            print(f"Error updating crypto data: {e}")
+            self.crypto_db = self.static_crypto_db.copy()
+            return False
+    
     def greet(self):
         return random.choice(self.greetings)
     
     def get_recommendation(self, query):
         query = query.lower()
         
-        # Check for sustainability queries
+        if any(word in query for word in ["refresh", "update", "latest"]):
+            success = self.update_crypto_data()
+            if success:
+                return "I've updated my cryptocurrency data with the latest information from CoinGecko! 🔄"
+            else:
+                return "I couldn't update the data right now. Using my existing information instead."
+        
         if any(word in query for word in ["sustainable", "green", "eco", "environment"]):
             return self.get_sustainable_recommendation()
             
-        # Check for profitability queries
         elif any(word in query for word in ["profit", "money", "gain", "return", "trending", "rising"]):
             return self.get_profitable_recommendation()
             
-        # Check for specific cryptocurrency information
         elif any(crypto.lower() in query for crypto in self.crypto_db.keys()):
             for crypto in self.crypto_db.keys():
-                if crypto.lower() in query:
+                if crypto.lower() in query.lower():
                     return self.get_crypto_info(crypto)
                     
-        # General recommendation query
+        elif "price" in query:
+            return self.get_price_info()
+        
         elif any(word in query for word in ["recommend", "suggestion", "advice", "best", "should", "buy"]):
             return self.get_balanced_recommendation()
             
@@ -82,12 +160,11 @@ class CryptoAdvisor:
         elif any(word in query for word in ["help", "guide", "how", "what can you"]):
             return self.get_help_message()
             
-        # Generic response for unrecognized queries
+        # Response to unrecognized queries
         else:
             return "I'm not sure what you're asking about. Try asking about sustainable cryptocurrencies, profitable options, or specific coins like Bitcoin!"
     
     def get_sustainable_recommendation(self):
-        # Find the most sustainable cryptocurrency
         sustainable_crypto = max(self.crypto_db.items(), 
                                 key=lambda x: x[1]["sustainability_score"])
         
@@ -103,14 +180,12 @@ class CryptoAdvisor:
         return random.choice(responses)
     
     def get_profitable_recommendation(self):
-        # Filter for rising cryptocurrencies
         rising_cryptos = {name: data for name, data in self.crypto_db.items() 
                          if data["price_trend"] == "rising"}
         
         if not rising_cryptos:
-            return "None of the cryptocurrencies are currently showing a rising trend."
+            return "None of the cryptocurrencies are currently showing a rising trend based on my latest data."
         
-        # Prioritize by market cap (high > medium > low)
         market_cap_priority = {"high": 3, "medium": 2, "low": 1}
         
         best_crypto = max(rising_cryptos.items(),
@@ -118,22 +193,42 @@ class CryptoAdvisor:
         
         crypto_name = best_crypto[0]
         market_cap = best_crypto[1]["market_cap"]
+        price_change = best_crypto[1].get("price_change_24h", "unknown")
+        
+        if price_change != "unknown":
+            price_info = f"with a 24h change of {price_change:.2f}%"
+        else:
+            price_info = ""
         
         responses = [
-            f"For profit potential, check out {crypto_name}! It's trending upward with a {market_cap} market cap. 📈",
-            f"{crypto_name} is showing a rising trend with {market_cap} market capitalization - looking promising! 🚀",
-            f"My profit-focused pick is {crypto_name}. It's on an upward trend in the {market_cap} market cap category. 💰"
+            f"For profit potential, check out {crypto_name}! It's trending upward {price_info} with a {market_cap} market cap. 📈",
+            f"{crypto_name} is showing a rising trend {price_info} with {market_cap} market capitalization - looking promising! 🚀",
+            f"My profit-focused pick is {crypto_name}. It's on an upward trend {price_info} in the {market_cap} market cap category. 💰"
         ]
         
         return random.choice(responses)
     
+    def get_price_info(self):
+        result = "Current cryptocurrency prices (USD):\n\n"
+        
+        for crypto, data in sorted(self.crypto_db.items(), key=lambda x: x[1].get("market_cap_value", 0), reverse=True):
+            price = data.get("current_price", "N/A")
+            change = data.get("price_change_24h", "N/A")
+            
+            if price != "N/A" and change != "N/A":
+                change_emoji = "🟢" if change > 0 else "🔴" if change < 0 else "⚪"
+                result += f"{crypto}: ${price:,.2f} {change_emoji} {change:.2f}%\n"
+            else:
+                result += f"{crypto}: Data not available\n"
+                
+        return result
+    
     def get_balanced_recommendation(self):
-        # Calculate a balanced score considering both profitability and sustainability
         profitability_score = {
-            "rising": 2, "stable": 1, "falling": 0  # Price trend
+            "rising": 2, "stable": 1, "falling": 0
         }
         market_cap_score = {
-            "high": 2, "medium": 1, "low": 0.5  # Market cap
+            "high": 2, "medium": 1, "low": 0.5
         }
         
         # Calculate combined scores
@@ -149,13 +244,29 @@ class CryptoAdvisor:
         best_crypto = max(scores.items(), key=lambda x: x[1])[0]
         crypto_data = self.crypto_db[best_crypto]
         
+        price_info = ""
+        if "current_price" in crypto_data:
+            price_info = f" Current price: ${crypto_data['current_price']:,.2f}."
+            
         return (f"Based on both profitability and sustainability, I recommend {best_crypto}. "
                 f"It has a {crypto_data['price_trend']} price trend, {crypto_data['market_cap']} "
-                f"market cap, and a sustainability score of {crypto_data['sustainability_score']*10}/10! 🌟")
+                f"market cap, and a sustainability score of {crypto_data['sustainability_score']*10}/10!{price_info} 🌟")
     
     def get_crypto_info(self, crypto):
         data = self.crypto_db[crypto]
+        
+        price_info = ""
+        if "current_price" in data:
+            price_info = f"💵 Current Price: ${data['current_price']:,.2f}\n"
+            
+        change_info = ""
+        if "price_change_24h" in data and data['price_change_24h'] is not None:
+            change_emoji = "🟢" if data['price_change_24h'] > 0 else "🔴" if data['price_change_24h'] < 0 else "⚪"
+            change_info = f"📊 24h Change: {change_emoji} {data['price_change_24h']:.2f}%\n"
+            
         return (f"{crypto} Info:\n"
+                f"{price_info}"
+                f"{change_info}"
                 f"📈 Price Trend: {data['price_trend'].capitalize()}\n"
                 f"💰 Market Cap: {data['market_cap'].capitalize()}\n"
                 f"⚡ Energy Use: {data['energy_use'].capitalize()}\n"
@@ -166,18 +277,21 @@ class CryptoAdvisor:
                 "- Ask about sustainable or eco-friendly cryptocurrencies\n"
                 "- Ask which crypto is trending up or best for profits\n"
                 "- Request information about specific coins like Bitcoin or Ethereum\n"
+                "- Ask for current prices of top cryptocurrencies\n"
+                "- Type 'refresh data' to get the latest information\n"
                 "- Ask for general recommendations\n\n"
                 "Example questions:\n"
                 "\"What's the most sustainable cryptocurrency?\"\n"
                 "\"Which crypto is trending up?\"\n"
                 "\"Tell me about Cardano\"\n"
+                "\"What are the current prices?\"\n"
                 "\"What should I invest in?\"")
 
 def main():
     bot = CryptoAdvisor("EcoCrypto")
     print(f"\n{bot.greet()}")
     print("Type 'exit' to quit.\n")
-    print("⚠️ DISCLAIMER: Cryptocurrency investments are risky. This bot provides educational information only. Always do your own research before investing! ⚠️\n")
+    print("DISCLAIMER: Cryptocurrency investments are risky. This bot provides educational information only. Always do your own research before investing! ⚠️\n")
     
     while True:
         user_input = input("\nYou: ")
