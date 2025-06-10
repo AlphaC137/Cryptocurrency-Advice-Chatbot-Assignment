@@ -75,7 +75,7 @@ EcoCrypto: Cardano Info:
 ![Help](screenshots/help.png)
 - Tell me about Bitcoin
 
-![Bitcoin Info](screenshot/info.png)
+![Bitcoin Info](screenshots/info.png)
 
 ## Running the Application
 1. Ensure you have Python installed
